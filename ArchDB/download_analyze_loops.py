@@ -25,9 +25,9 @@ from pylab import *
 
 url = "http://www.rcsb.org/pdb/download/downloadFile.do?fileFormat=pdb&compression=NO&structureId=" 	# link to RCSB
 RTD = 57.2957795 											# radians to degrees
-numResLoop = range(6,18)										# desired number of residues in loop
-CC_DIST = 17												# length of loop I'm interested in (dist b/w CA atoms of first/last residue)
-DIST_TOL =4.0												# length +/- tolerance
+numResLoop = range(6,20)										# desired number of residues in loop
+CC_DIST = 20												# length of loop I'm interested in (dist b/w CA atoms of first/last residue)
+DIST_TOL = 20.0												# length +/- tolerance
 OUTFILE = "loop_dihedrals.out"
 
 ### quick and dirty vector manipulation ###
@@ -142,7 +142,8 @@ def readfile(f):											# read file downloaded from ARCH DB
 				Nterm = float(list[7])							# this many residues between SS end and loop starting
 				Cterm = float(list[8])							# this many residues between loop ending and SS starting
 				dist = float(list[9])
-			except TypeError:
+			except:
+				pass
 				flag = 1
 
 			if dist < (CC_DIST + DIST_TOL) and dist > (CC_DIST - DIST_TOL):
@@ -202,8 +203,9 @@ def write_output(dihedral_list):									# save output to file, in format to go 
 	extra = 0
 	with open(OUTFILE, "a") as fout:
 		for i in dihedral_list:
-			fout.write(str(i[0][0]) + " " + str(i[0][1]) + " " + str(i[1][0]) + " " + str(i[1][1]) + " " + str(i[2][0]) + " " + str(i[2][1]) + " " + str(i[3][0]) + " " + str(i[3][1]) + " " + str(i[4][0]) + " " + str(i[4][1]) + "\n")
-#				fout.write(str(phi) + " " + str(psi) + "\n")
+			for j in i:
+				fout.write(str(j[0])+" "+str(j[1])+" ")
+			fout.write("\n")
 
 def read_outfile(outfile):
 	dihedral_list = []
@@ -218,18 +220,17 @@ def read_outfile(outfile):
 def rama_plot(dihedral_list):
 	xList = []
 	yList = []
-	for i in dihedral_list:
-		xList.append(i[0])
-		yList.append(i[1])
+	for d in dihedral_list:
+		for i in range(0,len(d),2):
+			xList.append(d[i])
+			yList.append(d[i+1])
 	fig, ax = plt.subplots()
-	plot = hist2d(xList, yList, bins = 40, norm=LogNorm())
+	plot = hist2d(xList, yList, bins = 30, norm=LogNorm(),cmap='hot')
 	ax.set_xlabel("phi")
 	ax.set_ylabel("psi")
 	cbar = colorbar()
 	cbar.set_label("number of occurances")
 	show()
-	#dihedral_list = readfile(filename)
-
 
 if os.path.exists(OUTFILE) == True:
 	dihedral_list = read_outfile(OUTFILE)	
@@ -238,5 +239,7 @@ else:
 	dihedral_list = readfile(filename)									# readfile is basically main function, it starts everything and ends there too
 	#print_output(dihedral_list)										# output options
 	write_output(dihedral_list)
+	dihedral_list = []
+	dihedral_list = read_outfile(OUTFILE)	
 
 rama_plot(dihedral_list)
