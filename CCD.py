@@ -3,53 +3,37 @@
 Cyclic Coordinate Descent (CCD)
 Parts of this class were borrowed from https://github.com/andre-wojtowicz/ccd-loop-closer/blob/master/CCDLoopCloser.py 
 Based on article 'Cyclic coordinate descent: A robotics algorithm for protein loop closure.' - Canutescu AA, Dunbrack RL Jr.
+
+This class is an implementation of the cyclic coordinate descent algorithm.
 """
 import numpy as np; from numpy import linalg as npl
 from numpy.random import random
 
-global max_iterations; max_iterations = 300
-
+####################################################################
+### This class creates chain objects that are adjusted using CCD ###
+####################################################################
 class CCDError(Exception):
 	pass
-
 class CCD:
-	def __init__(self, chain, fixed):
-		"""
-		chain - list of 3+ atoms that are moved.
-		fixed - list of target three atoms (C-Anchor).
-		"""
-		if len(chain) < 3: # initial check of input corectness
-			return "ERR", "chain length must equal at least 3"
-		if len(fixed) != 3:
-			return "ERR", "fixed length must equal to 3"
+	def __init__(self, chain, target):
+		self.chain_length = len(chain[:])
+		if self.chain_length < 3: return "ERR", "chain length must equal at least 3"
 		self.chain = chain[:]
-		self.fixed = fixed[:]
+		if len(target) != 3: return "ERR", "target length must equal to 3"
+		self.target = target[:]
 	
-	@classmethod
-	def arbitrary_rotate(self, pntM, pntO, rot_angle, uvecTheta): # EQUATION 3
-		"""
-		3D rotation of a point.
-		pntM - moving point.
-		pntO - central point of rotation.
-		rot_angle - rotation angle (radian).
-		uvecTheta - unit vector of y in local coordinate system.
-		"""
-		vecR = pntM - pntO   
-		try:
-			uvecR = self.normalize(vecR)
-		except CCDError: # don't rotate when the point is on rotation axis
-			return pntM
-		uvecS = np.cross(uvecR, uvecTheta)
-		return (npl.norm(vecR) * np.cos(rot_angle) * uvecR + npl.norm(vecR) * np.sin(rot_angle) * uvecS) + pntO
-
 	def write_pdb(self,n):
 		outfile = open("linker"+str(n)+".pdb","w")
+		it = 0
 		for i in self.chain:
+			if it%3==0: atom = "N"
+			if it%3==1: atom = "CA"
+			if it%3==2: atom = "C"
 			t1 = "ATOM"					# ATOM
 			t2 = 1						# INDEX
-			t3 = "C"					# ATOM NAME
+			t3 = atom					# ATOM NAME
 			t4 = ""						# ALTERNATE LOCATION INDICATOR
-			t5 = "AAA"					# RESIDUE NAME
+			t5 = "GLY"					# RESIDUE NAME
 			t6 = "X"					# CHAIN
 			t7 = 0						# RESIDUE NUMBER
 			t8 = ""						# INSERTION CODE
@@ -61,33 +45,40 @@ class CCD:
 			t14 = ""					# ELEMENT SYMBOL
 			t15 = ""					# CHARGE ON ATOM
 			outfile.write("{:6s}{:5d} {:^4s}{:1s}{:3s} {:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}          {:>2s}{:2s}\n".format(t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15))
+			it+=1
 		outfile.close()
 		return 0
-	
+
 	def calc_rmsd(self):
 		rmsd = 0.0
 		for i in range(1, 4): # iterate through LAST THREE atoms (i.e. [-3, -2, -1] bc of pbc's)
-			vec = self.chain[-i] - self.fixed[-i]
+			vec = self.chain[-i] - self.target[-i]
 			rmsd += np.dot(vec, vec)
 		return np.sqrt(rmsd/3.0)
 	
+	@classmethod
+	def rotate_points(self, M0, O, rot_angle, vec_norm): # EQUATION 3
+		R = M0 - O   
+		try: R_norm = self.normalize(R)
+		except CCDError: return M0 # don't rotate when the point is on rotation axis
+		S = np.cross(R_norm, vec_norm)
+		return (npl.norm(R) * np.cos(rot_angle) * R_norm + npl.norm(R) * np.sin(rot_angle) * S) + O
+	
 	@staticmethod
-	def get_rotation_axis(pntP, pntQ):
+	def get_rotation_axis(P, Q):
 		params = {}
-		params['x_1']=float(pntP[0]); params['y_1']=float(pntP[1]); params['z_1']=float(pntP[2])
-		params['a']=float(pntQ[0]-pntP[0]); params['b']=float(pntQ[1]-pntP[1]); params['c']=float(pntQ[2]-pntP[2])
+		params['x_1']=float(P[0]); params['y_1']=float(P[1]); params['z_1']=float(P[2])
+		params['a']=float(Q[0]-P[0]); params['b']=float(Q[1]-P[1]); params['c']=float(Q[2]-P[2])
 		return params
 	
 	@staticmethod
-	def get_rotation_central_point(line, pntP, pntQ, pntM_Ox):
-		vecQP = pntP - pntQ
+	def get_rotation_central_point(line, P, Q, M_Ox):
+		QP = P - Q
 		line_xyz = np.array([line['x_1'], line['y_1'], line['z_1']])
 		line_abc = np.array([line['a'], line['b'], line['c']])
-		t_numerator = np.dot(vecQP, pntM_Ox) - np.dot(vecQP, line_xyz)
-		t_denominator = np.dot(vecQP, line_abc)
-		t = t_numerator / float(t_denominator)
-		pntO_x = np.array([line['x_1'] + line['a'] * t, line['y_1'] + line['b'] * t, line['z_1'] + line['c'] * t])
-		return pntO_x
+		t = (np.dot(QP, M_Ox) - np.dot(QP, line_xyz))/float(np.dot(QP, line_abc))
+		O_x = np.array([line['x_1'] + line['a'] * t, line['y_1'] + line['b'] * t, line['z_1'] + line['c'] * t])
+		return O_x
 	
 	@staticmethod
 	def is_on_rotation_axis(pnt, axis):
@@ -100,110 +91,69 @@ class CCD:
 	
 	@staticmethod
 	def normalize(vec):
+		"""find unit vector"""
 		nrm = npl.norm(vec)
 		if nrm == 0.0: raise CCDError('Normalisation error; vector length eq 0')
 		else: return vec / nrm
 
-	def run(self, plot, threshold=1.0, max_it=5000):
-		if plot=='y' or plot=='yes' or plot=='on':
-			from mpl_toolkits.mplot3d import Axes3D
-			import matplotlib.pyplot as plt
-			plt.ion()
-			fig = plt.figure()
-			ax = fig.add_subplot(111)
-			def reshape(C):
-				X=[];Y=[];Z=[]
-				for q in C:
-					X.append(q[0]);Y.append(q[1]);Z.append(q[2])
-				return [X,Y,Z]
-			[X,Y,Z]=reshape(self.fixed); plt.scatter(X,Y,s=100,marker=(5,1),label="TARGET")
-			[X,Y,Z]=reshape(self.chain)
-			line1, = ax.plot(X, Y, 'b-')
+	def check_dihedrals(self):
+		for i in range(0,len(self.chain)-8,4): # iterate by RESIDUE
+			# OXYGEN ATOMS NOT INCLUDED IN DIHEDRAL CALCULATIONS
+			p1 = self.chain[i] 	# N  
+			p2 = self.chain[i+1]	# CA
+			p3 = self.chain[i+2]	# C
+			p5 = self.chain[i+4]	# N
+			p6 = self.chain[i+5]	# CA
+
+			def compute_phi(p0,p1,p2,p3):
+				b0 = -1.0*(p1 - p0) ; b1 = p2 - p1 ; b2 = p3 - p2
+				b0xb1 = np.cross(b0, b1)
+				b1xb2 = np.cross(b2, b1)
+				b0xb1_x_b1xb2 = np.cross(b0xb1, b1xb2)
+				y = np.dot(b0xb1_x_b1xb2, b1)*(1.0/np.linalg.norm(b1))
+				x = np.dot(b0xb1, b1xb2)
+				return np.degrees(np.arctan2(y, x))
+			
+			#print "phi:", compute_phi(p1,p2,p3,p5), ", psi:", compute_phi(p2,p3,p5,p6)
+
+		return True
+
+	def run(self, n, threshold=0.3, max_it=5000):
 		it = 0
 		while True:
 			rmsd = self.calc_rmsd()
 			if rmsd < threshold: 
-				write = self.write_pdb(it)
+				write = self.write_pdb(n)
 				return "success", rmsd, it
 			if it == max_it: return "MAX_IT", rmsd, it
-			for i in range(len(self.chain)-2):# for almost each edge find best rotation angle
-				N_coors = self.chain[i]
-				Ca_coors = self.chain[i+1]
+
+			# iterate through all residues EXCEPT the target ones
+			for i in range(0,self.chain_length-2,4):# for almost each edge find best rotation angle
+				N_coors = np.array(self.chain[i])
+				Ca_coors = np.array(self.chain[i+1])
 				rot_axis = self.get_rotation_axis(N_coors, Ca_coors)
 				Ca_N_vec_norm = self.normalize(Ca_coors - N_coors)
-				b = 0.0; c = 0.0 # S = (a,b,c)
-				for j in range(1, 4):
-					initial_coors = self.chain[-j]; target_coors = self.fixed[-j]
+				b = 0.0; c = 0.0 
+
+				# Now we have a rotation vector, let's see what that does for the RMSD of the target
+				for j in range(1, 4):	# these last 3 atoms are the target
+					initial_coors = self.chain[-j]; target_coors = self.target[-j]
 					rot_point = self.get_rotation_central_point(rot_axis, N_coors, Ca_coors, initial_coors)
 					R_j = initial_coors - rot_point
 					target_vec = target_coors - rot_point
 					if self.is_on_rotation_axis(initial_coors, rot_axis): continue
-					S_j = np.cross(self.normalize(R_j), Ca_N_vec_norm) #see Fig 1b
+					# now we have everything we need to compute the rotations (given by b&c)
+					S_j = np.cross(self.normalize(R_j), Ca_N_vec_norm) # see Fig 1b
 					b += 2 * npl.norm(R_j) * np.dot(target_vec, self.normalize(R_j))
 					c += 2 * npl.norm(R_j) * np.dot(target_vec, S_j)
 				rot_angle = np.arctan2(c/np.sqrt(b**2+c**2), b/np.sqrt(b**2+c**2)) # EQUATION 10 
 				# APPLY ROTATION TO NEXT POINTS
-				for j in range(i+2, len(self.chain)):
+				for j in range(i+2, self.chain_length):
 					pntO = self.get_rotation_central_point(rot_axis, N_coors, Ca_coors, self.chain[j])
-					self.chain[j] = self.arbitrary_rotate(self.chain[j], pntO, rot_angle, Ca_N_vec_norm)
-			if plot=='y' or plot=='yes' or plot=='on':
-				[X,Y,Z]=reshape(self.chain)
-				line1.set_ydata(Y)
-				fig.canvas.draw()
-				it += 1
+					chain_copy = self.chain
+					self.chain[j] = self.rotate_points(self.chain[j], pntO, rot_angle, Ca_N_vec_norm)
+				if self.check_dihedrals() == False:
+					print "this isn't going to work"
+					return "failed"
+			it += 1
 
-def plot(C0,CF,FIXED):
-	from mpl_toolkits.mplot3d import Axes3D
-	import matplotlib.pyplot as plt
-	fig = plt.figure()
-	ax = fig.add_subplot(111, projection='3d')
-	def reshape(C):
-		X=[];Y=[];Z=[]
-		for q in C:
-			X.append(q[0]);Y.append(q[1]);Z.append(q[2])
-		return [X,Y,Z]
-	[X,Y,Z]=reshape(C0); ax.scatter(X,Y,Z,s=200,marker='+',label="INITIAL")
-	[X,Y,Z]=reshape(CF); ax.scatter(X,Y,Z,s=100,marker=(5,0),label="FINAL")
-	[X,Y,Z]=reshape(FIXED); ax.scatter(X,Y,Z,s=100,marker=(5,1),label="TARGET")
-	legend = ax.legend(loc='upper left')
-	plt.show()
-
-def make_random_chain_and_run(chain_len,chain_base,target,plot,number_of_loops=10):
-	global max_iterations
-	success = 0
-	av_dist = 3.1 # computed from CG structure
-	for n in range(number_of_loops):
-		chain = [chain_base]
-		current_point = chain_base
-		for j in range(chain_len):
-			next_point = random(3)
-			next_point = next_point/npl.norm(next_point)
-			next_point = current_point + next_point*av_dist
-			chain.append(next_point)
-			current_point = next_point
-		for j in range(-5, -2):
-			phi = 2*np.pi*random()
-			rot_axis = CCD.get_rotation_axis(chain[j], chain[j+1])
-			vec_PQ = chain[j+1] - chain[j]
-			vec_PQ_norm = vec_PQ / npl.norm(vec_PQ)			
-			for k in range(j+2, 0):
-				center_point = CCD.get_rotation_central_point(rot_axis, chain[j], chain[j+1], chain[k])
-				chain[k] = CCD.arbitrary_rotate(chain[k], center_point, phi, vec_PQ_norm)
-		init = CCD(chain, target)
-		check, RMSD, it = init.run(plot,max_it=max_iterations)
-		if check == 'success': success += 1
-		print("{0}\t{1}\t\t{2}\t{3}\t{4}".format(n, str(round(success*100/float(n+1),2))+'%', check, str(RMSD), it))
-
-def run_CCD():
-	print "need to constrain the first 3 beads to overlap with the C terminus"
-	print "also need to not print the first 3 and last 3 beads since they are"
-	print "supposed to overlap"
-	chain_base = np.array([9.840000,16.639999,25.469999])
-	target = [np.array([27.95,28.18,31.82]),np.array([29.68,28.79,34.75]),np.array([30.23,29.99,37.54])]
-	chain_length = 12
-	number_of_loops = 10
-	plot='off'
-	make_random_chain_and_run(chain_length,chain_base,target,plot,number_of_loops)
-
-if __name__ == "__main__":
-	run_CCD()
