@@ -8,27 +8,29 @@ import numpy as np; from numpy import linalg as npl
 from numpy.random import random
 import Bio.PDB
 import CCD
-import LoopMaker
+import LoopTools
+
+print "add scoring function to assess quality of loops!"
 
 ############################################
 ### load variables into global namespace ###
 ############################################
+global RMSD_threshold; RMSD_threshold = 0.2
 global max_iterations; max_iterations = 300
+global max_success; max_success = 10 # maximum number of structures you want to make
 global dl; dl = 0 # variability in chain length. i.e. 15 +/- 1
-global DIST_FACTOR; DIST_FACTOR = 0.05
+global DIST_FACTOR; DIST_FACTOR = 0.25
 
 ########################################################
 ### Graft existing loops from the pdb onto structure ###
 ########################################################
 def mine_loop_data(loop_length,CC_DIST,LEN_TOL):
-	#import loop_miner
 	OUTFILE = "loop_dihedrals.out"
 	ArchDB = "ArchDB/archdb.mini.tab"
 	DIST_TOL = np.floor(CC_DIST*DIST_FACTOR)
 	numResLoop = range(int(loop_length-LEN_TOL),int(loop_length+LEN_TOL+1))						# desired number of residues in loop
 	print "looking for loops with", loop_length, "+/-", LEN_TOL, ", and span a distance of", CC_DIST, "+/-", DIST_TOL
-
-	miner = LoopMaker.LoopMiner(numResLoop,CC_DIST,DIST_TOL,OUTFILE)
+	miner = LoopTools.LoopMiner(numResLoop,CC_DIST,DIST_TOL,OUTFILE)
 	dihedral_list = miner.mineArchDB(ArchDB)							# mineArchDB is basically main function, it starts everything and ends there too
 	return dihedral_list
 
@@ -68,13 +70,21 @@ def compute_CC_DIST(first_res,target_coors):
 def run_CCD(chain,target_coors,success=0,n=1):
 	### RUN CCD ###
 	init = CCD.CCD(chain, target_coors) 
-	check, RMSD, it = init.run(n,max_it=max_iterations)
-	if check == 'success': success += 1
+	check, RMSD, it, V = init.run(n,max_it=max_iterations,threshold=RMSD_threshold)
+	if check == 'success': 
+		success += 1
 	print("{0}\t{1}\t\t{2}\t{3}\t{4}".format(n, str(round(success*100/float(n+1),2))+'%', check, str(RMSD), it))
-	return success
+	return [success, V]
+
+def make_first_res():
+	pdbname = "/home/dillion/data/reflectin/add_linker/structures/small_mem_protein-inserted_frame-738.pdb"
+	protein_shift = np.array([30,0,0])
+	loopmaker = LoopTools.LoopMaker()
+	[base_res, target_coors] = loopmaker.define_initial_cond(pdbname,protein_shift)
+	first_res = loopmaker.anchor_is_start(base_res)
+	return [first_res,target_coors]
 
 def run_graft(loop_length):
-	#import loop_miner
 	[first_res,target_coors] = make_first_res()
 	CC_DIST = compute_CC_DIST(first_res,target_coors)
 	dihedral_list = [] ; LEN_TOL = 0
@@ -84,34 +94,32 @@ def run_graft(loop_length):
 		dihedral_list = mine_loop_data(loop_length,CC_DIST,LEN_TOL)
 		LEN_TOL += 1
 
-	success = 0 ; n = 0 ; loopmaker = LoopMaker.LoopMaker()
+	success = 0 ; n = 0 ; loopmaker = LoopTools.LoopMaker() ; last_success = 0; V_list = []
 	for di in dihedral_list:
 		[first_res,target_coors] = make_first_res()
 		loop = loopmaker.finish_grafted_chain(first_res,di)
-		success = run_CCD(extract_coors(loop),target_coors,success,n)
+		[success,V] = run_CCD(extract_coors(loop),target_coors,success,n)
+		if V != 0:
+			V_list.append([V,n])
 		n += 1
+		if len(V_list)>max_success or n == len(dihedral_list):
+			print max_success, "structures found"
+			for v in V_list:
+				print "[energy, identification number]", v
+			exit()
 	return None
 
 ###############################################################################################
 ### this function starts the chain with the appropriate dihedrals, direction, and placement ###
 ###############################################################################################
 def run_straight_aligned(loop_length):
-	print "this usually doesn't give good results"
+	print "WARNING: this method usually doesn't give good results"
 	[first_res,target_coors] = make_first_res()
-	loopmaker = LoopMaker.LoopMaker()
+	loopmaker = LoopTools.LoopMaker()
 	loop_structure = loopmaker.finish_straight_chain(first_res,loop_length)
 	chain = loopmaker.extract_coors(loop_structure)
-
 	run_CCD(chain,target_coors)
 	return 0
-
-def make_first_res():
-	pdbname = "/home/dillion/data/reflectin/add_linker/structures/small_mem_protein-inserted_frame-738.pdb"
-	protein_shift = np.array([30,0,0])
-	loopmaker = LoopMaker.LoopMaker()
-	[base_res, target_coors] = loopmaker.define_initial_cond(pdbname,protein_shift)
-	first_res = loopmaker.anchor_is_start(base_res)
-	return [first_res,target_coors]
 
 ####################
 ### execute code ###

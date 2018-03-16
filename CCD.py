@@ -25,10 +25,11 @@ class CCD:
 	def write_pdb(self,n):
 		outfile = open("linker"+str(n)+".pdb","w")
 		it = 0
-		for i in self.chain:
-			if it%3==0: atom = "N"
-			if it%3==1: atom = "CA"
-			if it%3==2: atom = "C"
+		for i in self.chain[4:len(self.chain)-4]:
+			if it%4==0: atom = "N"
+			if it%4==1: atom = "CA"
+			if it%4==2: atom = "C"
+			if it%4==3: atom = "O"
 			t1 = "ATOM"					# ATOM
 			t2 = 1						# INDEX
 			t3 = atom					# ATOM NAME
@@ -97,6 +98,13 @@ class CCD:
 		else: return vec / nrm
 
 	def check_dihedrals(self):
+		"""
+		V is the CHARMM style Dihedral Angle Potential. Parameters are set according
+		to CHARMM22 force field 
+
+		"""
+
+		V = 0 ; Vn = 1 ; n = 1 ; phi_0 = 180 ; psi_0 = 0
 		for i in range(0,len(self.chain)-8,4): # iterate by RESIDUE
 			# OXYGEN ATOMS NOT INCLUDED IN DIHEDRAL CALCULATIONS
 			p1 = self.chain[i] 	# N  
@@ -114,9 +122,9 @@ class CCD:
 				x = np.dot(b0xb1, b1xb2)
 				return np.degrees(np.arctan2(y, x))
 			
-			#print "phi:", compute_phi(p1,p2,p3,p5), ", psi:", compute_phi(p2,p3,p5,p6)
-
-		return True
+			phi = compute_phi(p1,p2,p3,p5) ; psi = compute_phi(p2,p3,p5,p6)
+			V += (Vn/2.0) * ( (1 + np.cos(n*phi - phi_0)) + (1 + np.cos(n*psi - psi_0)) )
+		return V
 
 	def run(self, n, threshold=0.3, max_it=5000):
 		it = 0
@@ -124,8 +132,9 @@ class CCD:
 			rmsd = self.calc_rmsd()
 			if rmsd < threshold: 
 				write = self.write_pdb(n)
-				return "success", rmsd, it
-			if it == max_it: return "MAX_IT", rmsd, it
+				V = self.check_dihedrals()
+				return "success", rmsd, it, V
+			if it == max_it: return "MAX_IT", rmsd, it, 0
 
 			# iterate through all residues EXCEPT the target ones
 			for i in range(0,self.chain_length-2,4):# for almost each edge find best rotation angle
@@ -152,8 +161,6 @@ class CCD:
 					pntO = self.get_rotation_central_point(rot_axis, N_coors, Ca_coors, self.chain[j])
 					chain_copy = self.chain
 					self.chain[j] = self.rotate_points(self.chain[j], pntO, rot_angle, Ca_N_vec_norm)
-				if self.check_dihedrals() == False:
-					print "this isn't going to work"
-					return "failed"
+				
 			it += 1
 

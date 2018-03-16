@@ -311,6 +311,7 @@ class LoopMaker:
 
 		outfile = open(pdbname,"w")
 		it = 0
+		# loop contains extra residue at beginning and extra residue at end. Don't put those in PDB
 		for i in coors:
 			if it%4==0: atom = "N"
 			if it%4==1: atom = "CA"
@@ -472,11 +473,12 @@ class LoopMaker:
 		# biopython is stupid so I have to extract coordinates, save in pdb, and reload to make coordinates into a "structure"
 		out = Bio.PDB.PDBIO()
 		pdbname = "anchor_res.pdb"
-		test = np.array([base_res['N'].get_coord(), base_res['CA'].get_coord(), base_res['C'].get_coord(), base_res['O'].get_coord()])
-		self.write_pdb(test,pdbname)
+		coors = np.array([base_res['N'].get_coord(), base_res['CA'].get_coord(), base_res['C'].get_coord(), base_res['O'].get_coord()])
+		self.write_pdb(coors,pdbname)
 		pdb_parser = Bio.PDB.PDBParser(QUIET = True)
 		loop_structure = pdb_parser.get_structure("ref",pdbname)
 		os.remove( pdbname ) # delete unnecessary pdb
+
 		return loop_structure
 
 def run_LoopMaker():
