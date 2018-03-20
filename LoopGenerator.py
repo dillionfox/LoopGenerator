@@ -34,7 +34,7 @@ print ""
 ### load USER DEFINED variables into global namespace ###
 #########################################################
 
-global RMSD_threshold; RMSD_threshold = 0.2			# cut off for loop closing
+global RMSD_threshold; RMSD_threshold = 0.25			# cut off for loop closing
 global max_iterations; max_iterations = 500			# number of iterations for CCD algorithm
 global max_success;    max_success = 1				# maximum number of structures you want to make
 #global dl;             dl = 2 					# variability in chain length. i.e. 15 +/- 1
@@ -189,7 +189,7 @@ def run_graft(loop_length):
 				mda.write_merged(pdbname, "linker"+str(n)+".pdb",n)
 				V_list.append([V,n])
 			n += 1
-			if len(V_list)>max_success or n == len(dihedral_list):
+			if len(V_list)>=max_success or n == len(dihedral_list):
 				print success, "structures found"
 				for v in V_list:
 					print "[energy, identification number, native structure]", v, n, native_structures[n]
