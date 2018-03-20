@@ -190,7 +190,7 @@ class LoopMiner:
 								if type_error != 1:
 									loop_dihedrals.append([phi, psi])
 						dihedral_list.append(loop_dihedrals)					# comprehensive list of pairs of angles
-		return dihedral_list
+		return [dihedral_list, pdb_list]
 
 	### Output options ###
 	def write_output(dihedral_list):									# save output to file, in format to go with plotting script

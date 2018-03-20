@@ -25,18 +25,19 @@ class CCD:
 	def write_pdb(self,n):
 		outfile = open("linker"+str(n)+".pdb","w")
 		it = 0
+		resnum = -1
 		for i in self.chain[4:len(self.chain)-4]:
-			if it%4==0: atom = "N"
+			if it%4==0: atom = "N" ; resnum+=1
 			if it%4==1: atom = "CA"
 			if it%4==2: atom = "C"
 			if it%4==3: atom = "O"
 			t1 = "ATOM"					# ATOM
-			t2 = 1						# INDEX
+			t2 = it						# INDEX
 			t3 = atom					# ATOM NAME
 			t4 = ""						# ALTERNATE LOCATION INDICATOR
 			t5 = "GLY"					# RESIDUE NAME
 			t6 = "X"					# CHAIN
-			t7 = 0						# RESIDUE NUMBER
+			t7 = resnum					# RESIDUE NUMBER
 			t8 = ""						# INSERTION CODE
 			t9 =  float(i[0])				# X
 			t10 = float(i[1])				# Y
