@@ -36,7 +36,7 @@ print ""
 
 global RMSD_threshold; RMSD_threshold = 0.2			# cut off for loop closing
 global max_iterations; max_iterations = 500			# number of iterations for CCD algorithm
-global max_success;    max_success = 10000			# maximum number of structures you want to make
+global max_success;    max_success = 1				# maximum number of structures you want to make
 #global dl;             dl = 2 					# variability in chain length. i.e. 15 +/- 1
 global DIST_FACTOR;    DIST_FACTOR = 0.2			# N-to-C terminal distance variability for searching ArchDB for structures
 								# pdbname is your input structure
@@ -162,7 +162,7 @@ def run_graft(loop_length):
 	[first_res,target_coors] = make_first_res()
 	CC_DIST = compute_CC_DIST(first_res,target_coors)
 	global dihedral_list
-	dihedral_list = [] ; LEN_TOL = 2
+	dihedral_list = [] ; LEN_TOL = 0
 	start = first_res
 	par = 'n'
 
