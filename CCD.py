@@ -14,13 +14,12 @@ from numpy.random import random
 ####################################################################
 class CCDError(Exception):
 	pass
+
 class CCD:
 	def __init__(self, chain, target):
-		self.chain_length = len(chain[:])
-		if self.chain_length < 3: return "ERR", "chain length must equal at least 3"
-		self.chain = chain[:]
-		if len(target) != 3: return "ERR", "target length must equal to 3"
-		self.target = target[:]
+		self.chain_length = len(chain)
+		self.chain = chain
+		self.target = target
 	
 	def write_pdb(self,n):
 		outfile = open("linker"+str(n)+".pdb","w")
@@ -131,11 +130,12 @@ class CCD:
 		it = 0
 		while True:
 			rmsd = self.calc_rmsd()
-			if rmsd < threshold: 
+			if it == max_it and rmsd < threshold: 
 				write = self.write_pdb(n)
 				V = self.check_dihedrals()
 				return "success", rmsd, it, V
-			if it == max_it: return "MAX_IT", rmsd, it, 0
+			elif it == max_it: 
+				return "MAX_IT", rmsd, it, 0
 
 			# iterate through all residues EXCEPT the target ones
 			for i in range(0,self.chain_length-2,4):# for almost each edge find best rotation angle

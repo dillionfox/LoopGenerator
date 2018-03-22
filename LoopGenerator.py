@@ -16,33 +16,32 @@ Dillion Fox, 3/2018
 import numpy as np; from numpy import linalg as npl
 from numpy.random import random
 import Bio.PDB
+import os
 from joblib import Parallel, delayed
 from joblib.pool import has_shareable_memory
 import CCD
 import LoopTools
 
-print "~~~ TODO ~~~"
-print "1. I think the next thing to do is figure out how to port this"
-print "code into AUTOMACS. From there I can figure out how to write"
-print "pdb files containing the combined structures, and I can also"
-print "have it throw away structures that have steric clashes."
-print ""
-print "2. make it work for coarse-grained models"
-print ""
+"""
+          ~~~ TODO ~~~
+
+- make it work for coarse-grained models
+
+"""
 
 #########################################################
 ### load USER DEFINED variables into global namespace ###
 #########################################################
 
-global RMSD_threshold; RMSD_threshold = 0.25			# cut off for loop closing
-global max_iterations; max_iterations = 500			# number of iterations for CCD algorithm
-global max_success;    max_success = 1				# maximum number of structures you want to make
-#global dl;             dl = 2 					# variability in chain length. i.e. 15 +/- 1
-global DIST_FACTOR;    DIST_FACTOR = 0.2			# N-to-C terminal distance variability for searching ArchDB for structures
-								# pdbname is your input structure
-global pdbname ;       pdbname = "/home/dillion/data/reflectin/add_linker/structures/small_mem_protein-inserted_frame-738.pdb"
-global protein_shift;  protein_shift  = np.array([30,0,0])	# how much you want to shift your input structure
-
+global RMSD_threshold;    RMSD_threshold = 0.25			# cut off for loop closing
+global max_iterations;    max_iterations = 1000			# number of iterations for CCD algorithm
+global max_success;       max_success = 50			# maximum number of structures you want to make
+global DIST_FACTOR;       DIST_FACTOR = 0.2			# N-to-C terminal distance variability for searching ArchDB for structures
+global pdbname;           pdbname = "/home/dillion/data/reflectin/add_linker/structures/small_mem_protein-inserted_frame-738.pdb"
+global protein_shift;     protein_shift  = np.array([20,10,0])	# how much you want to shift your input structure
+global protein_rotation;  protein_rotation  = 30		# how much you want to rotate the shifted structure (degrees)
+global loop_length;       loop_length = 14
+global clash_cutoff;	  clash_cutoff = 0.8
 
 def mine_loop_data(loop_length,CC_DIST,LEN_TOL):
 	"""
@@ -131,19 +130,10 @@ def make_first_res():
 	"""
 
 	loopmaker = LoopTools.LoopMaker()
-	[base_res, target_coors] = loopmaker.define_initial_cond(pdbname,protein_shift)
+	target_coors = loopmaker.make_structure2(pdbname, protein_shift, protein_rotation)
+	base_res = loopmaker.define_initial_cond(pdbname,protein_shift)
 	first_res = loopmaker.anchor_is_start(base_res)
 	return [first_res,target_coors]
-
-import mda
-def run_loop(n):
-	di = dihedral_list[n]
-	[first_res,target_coors] = make_first_res()
-	loop = loopmaker.finish_grafted_chain(first_res,di)
-	[success,V] = run_CCD(extract_coors(loop),target_coors,success,n)
-	if V != 0:
-		mda.write_merged(pdbname, "linker"+str(n)+".pdb",n)
-		print "[energy, identification number]", V, n 
 
 ################
 ### OPTION 1 ###
@@ -161,10 +151,8 @@ def run_graft(loop_length):
 	"""
 	[first_res,target_coors] = make_first_res()
 	CC_DIST = compute_CC_DIST(first_res,target_coors)
-	global dihedral_list
 	dihedral_list = [] ; LEN_TOL = 0
 	start = first_res
-	par = 'n'
 
 	if LEN_TOL == 0:
 		while len(dihedral_list) < 1:
@@ -176,24 +164,28 @@ def run_graft(loop_length):
 	n_it = len(dihedral_list); print "number of loops to test:", n_it
 	success = 0 ; n = 0 ; loopmaker = LoopTools.LoopMaker() ; last_success = 0; V_list = []
 
-	if par == 'y' or par == 'yes':
-		Parallel(n_jobs=12)(delayed(run_loop,has_shareable_memory)(n) for n in range(n_it))
-
-	else:
-		for di in dihedral_list:
-			[first_res,target_coors] = make_first_res()
-			loop = loopmaker.finish_grafted_chain(first_res,di)
-			[success,V] = run_CCD(extract_coors(loop),target_coors,success,n)
-			print "[energy, identification number]", V, n
-			if V != 0:
-				mda.write_merged(pdbname, "linker"+str(n)+".pdb",n)
+	for di in dihedral_list:
+		[first_res,target_coors] = make_first_res()
+		loop = loopmaker.finish_grafted_chain(first_res,di)
+		[success,V] = run_CCD(extract_coors(loop),target_coors,success,n)
+		linker_pdb = "linker"+str(n)+".pdb"
+		if V != 0:
+			mdatools = LoopTools.MDATools(pdbname, linker_pdb, protein_shift)
+			overlap = mdatools.check_overlap()
+			if overlap < clash_cutoff:
+				print "STERIC CLASHES DETECTED. Closest contact =", overlap 
+				os.remove(linker_pdb)
+			else:
+				print "SUCCESS: writing merged structure. Closest contact  =", overlap, ", dihedral energy =", V
+				mdatools.write_merged(n)
 				V_list.append([V,n])
-			n += 1
-			if len(V_list)>=max_success or n == len(dihedral_list):
-				print success, "structures found"
-				for v in V_list:
-					print "[energy, identification number, native structure]", v, n, native_structures[n]
-				exit()
+		if len(V_list)>=max_success or n == len(dihedral_list):
+			print success, "structures found"
+			for v in V_list:
+				print "[energy, identification number, native structure]", v[0], n, native_structures[n]
+			exit()
+		n += 1
+
 	return None
 
 ################
@@ -208,7 +200,8 @@ def run_straight_aligned(loop_length):
 	"""
 
 	print "WARNING: this method usually doesn't give good results"
-	[first_res,target_coors] = make_first_res()
+	first_res = make_first_res()
+	target_coors = loopmaker.make_structure2(pdbname, protein_shift, protein_rotation)
 	loopmaker = LoopTools.LoopMaker()
 	loop_structure = loopmaker.finish_straight_chain(first_res,loop_length)
 	chain = loopmaker.extract_coors(loop_structure)
@@ -219,6 +212,5 @@ def run_straight_aligned(loop_length):
 ### execute code ###
 ####################
 if __name__ == "__main__":
-	loop_length = 10
 	#run_straight_aligned(loop_length)
 	run_graft(loop_length)

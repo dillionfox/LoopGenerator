@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
 from pylab import *
+import MDAnalysis as mda
+import MDAnalysis.analysis.distances as mdad
 
 url = "http://www.rcsb.org/pdb/download/downloadFile.do?fileFormat=pdb&compression=NO&structureId=" 	# link to RCSB
 RTD = 57.2957795 											# radians to degrees
@@ -143,6 +145,8 @@ class LoopMiner:
 		dihedral_list = []										# store dihedral angles
 		old_pdbID = 'null'
 		total=0												# track number of loops (for debugging)
+		minLength = 4
+		maxLength = 20
 		for line in open(f):
 			flag = 0										# if information cannot be salvaged, this variable will break loop
 			list = line.split()									# break lines delimited by spaces
@@ -163,7 +167,7 @@ class LoopMiner:
 					total+=1
 					loop_start = SSstart + Nterm							# start of loop (residue number)
 					loop_stop = SSstop - Cterm							# end of loop (residue number)
-					if (loop_stop - loop_start) > 6 and (loop_stop - loop_start) < 10:
+					if (loop_stop - loop_start) > minLength and (loop_stop - loop_start) < maxLength:
 						if pdbID not in pdb_list and flag != 1:						# if new pdb, download it
 							if os.path.isfile(old_pdbID+'.pdb'): 					# delete old pdb before downloading new one
 								os.remove(old_pdbID+'.pdb')
@@ -350,31 +354,21 @@ class LoopMaker:
 
 		pdb_parser = Bio.PDB.PDBParser(QUIET = True)
 		model = pdb_parser.get_structure("ref",pdbname)[0]
-		first_res =  self.model_selectres(model,1)
 		last_res =  self.model_selectres(model,self.model_numres(model))
-		base_coors = self.res_get_atom_coors(last_res) # C-terminus is base
-		target_coors = self.res_get_atom_coors(first_res) # need to connect to N-terminus
-		for v in range(3):
-			target_coors[v] += protein_shift
-		return [last_res, target_coors]
+		return last_res
 
-	def write_protein_copy(self,pdbname,protein_shift):
-		print "!!!"
-		print "this would be a cool and useful function but"
-		print "'set_coord' doesn't work for some reason"
-		print "!!!"
+	def make_structure2(self, pdbname, protein_shift, protein_rotate):
+		"""
+		This is a substitute for the function above which doesn't work. It uses MDAnalysis...
 
-		pdb_parser = Bio.PDB.PDBParser(QUIET = True)
-		structure = pdb_parser.get_structure("ref",pdbname)
-		for model in structure:
-			for chain in model:
-				for res in chain:
-					for atom in res:
-						atom.set_coord = np.array(atom.get_coord()) + np.array(protein_shift)
+		"""
 
-		out = Bio.PDB.PDBIO()
-		out.set_structure(structure)
-		out.save( "structure2.pdb" )
+		prot2 = mda.Universe(pdbname)
+		prot2.atoms.translate(protein_shift)
+		prot2.atoms.rotateby(protein_rotate,[0,0,1])
+		prot2.atoms.write(pdbname+"_2.pdb")
+		sel = prot2.select_atoms('resid 1 and (name N or name CA or name C)')
+		return sel.positions
 	
 	def extract_coors(self,structure):
 		"""
@@ -496,6 +490,95 @@ def run_LoopMaker():
 	loop_structure = loopmaker.finish_straight_chain(loop_structure)
 	coors = loopmaker.extract_coors(loop_structure)
 	print coors
+
+
+##############################################################################
+##############################################################################
+###                                                                        ###
+###  This class employs MDAnalysis functions to manipulate the linker and  ###
+###   protein structures. I would have used BioPython for these features   ###
+###          but I found MDAnalysis was much better suited for it.         ###
+###                                                                        ###
+###                                                                        ###
+###                         Dillion Fox, 3/2018                            ###
+###                                                                        ###  
+##############################################################################
+##############################################################################
+
+class MDATools:
+	def __init__(self, protein_pdb, linker_pdb, shift):
+		self.protein_pdb = protein_pdb
+		self.linker_pdb = linker_pdb
+		self.shift = shift
+		self.rotate = 30
+		self.protein_pdb2 = protein_pdb+"_2.pdb"
+
+	def merge_structures(self):
+		"""
+		This function takes the original protein structure and the newly created linker
+		and merges them into one MDAnalysis universe.
+	
+		"""
+		
+		prot1 = mda.Universe(self.protein_pdb) ; pl = len(prot1.atoms.residues)
+		prot2 = mda.Universe(self.protein_pdb2)
+		link = mda.Universe(self.linker_pdb) ; ll = len(link.atoms.residues)
+		
+		# protein 1
+		sel1 = 'resid '
+		for i in range(pl):
+			sel1+=str(i)+' '
+		
+		# linker
+		sel2 = 'resid '
+		for i in range(ll):
+			link.atoms.residues[i].resid += (pl+1)
+			sel2+=str(link.atoms.residues[i].resid)+' '
+		
+		# protein 2
+		sel3 = 'resid '
+		for i in range(pl):
+			prot2.atoms.residues[i].resid += (pl+ll)
+			sel3+=str(prot2.atoms.residues[i].resid)+' '
+		
+		u = mda.Merge(prot1.atoms,link.atoms,prot2.atoms)
+		sel = [sel1, sel2, sel3]
+		return [u, sel]
+	
+	def check_overlap(self):
+		"""
+		This function checks for steric clashes between the two proteins and the linker.
+		If clashes are found, it returns False, otherwise it returns True.
+	
+		"""
+	
+		def find_min(arr):
+			epsilon = 0.01
+			el = np.where(np.array(arr) < arr.min()+epsilon)
+			return [el, arr.min()]
+
+		[u, sel] = self.merge_structures()
+
+		newsel = 'resid '
+		for res in sel[1].split()[2:-1]:
+			newsel += str(res)+' '
+		
+		protein1 = u.select_atoms(sel[0])
+		#linker2 = u.select_atoms(sel[1])
+		linker2 = u.select_atoms(newsel)
+		protein3 = u.select_atoms(sel[2])
+		
+		dist12 = mdad.distance_array(protein1.positions,linker2.positions)
+		dist23 = mdad.distance_array(protein3.positions,linker2.positions)
+		dist13 = mdad.distance_array(protein1.positions,protein3.positions)
+		
+		return min(dist12.min(), dist23.min(), dist13.min()) 
+	
+	def write_merged(self, n):
+		u = self.merge_structures()[0]
+		u.atoms.write("merged"+str(n)+".pdb")
+		return None
+
 
 ##############################################################################
 ##############################################################################
