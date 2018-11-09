@@ -354,7 +354,8 @@ class LoopMaker:
 
 		pdb_parser = Bio.PDB.PDBParser(QUIET = True)
 		model = pdb_parser.get_structure("ref",pdbname)[0]
-		last_res =  self.model_selectres(model,self.model_numres(model))
+		#last_res =  self.model_selectres(model,self.model_numres(model))
+		last_res = model['A'][self.model_numres(model)]
 		return last_res
 
 	def make_structure2(self, pdbname, protein_shift, protein_rotate):
@@ -424,12 +425,13 @@ class LoopMaker:
 			length+=1
 		return length
 	
-	def model_selectres(self,model,resnum):
-		"""
-		Because I sometimes forget
+	#def model_selectres(self,model,resnum):
+	#	"""
+	#	Because I sometimes forget
 
-		"""
-		return model['A'][resnum]
+	#	"""
+	#	import ipdb; ipdb.set_trace()
+	#	return model['A'][resnum]
 	
 	def res_get_atom_coors(self,res):
 		"""

@@ -19,8 +19,8 @@ import Bio.PDB
 import os
 from joblib import Parallel, delayed
 from joblib.pool import has_shareable_memory
-import CCD
-import LoopTools
+from utils import CCD
+from utils import LoopTools
 
 """
           ~~~ TODO ~~~
@@ -37,9 +37,9 @@ global RMSD_threshold;    RMSD_threshold = 0.25			# cut off for loop closing
 global max_iterations;    max_iterations = 1000			# number of iterations for CCD algorithm
 global max_success;       max_success = 50			# maximum number of structures you want to make
 global DIST_FACTOR;       DIST_FACTOR = 0.2			# N-to-C terminal distance variability for searching ArchDB for structures
-global pdbname;           pdbname = "structure1.pdb"
-global protein_shift;     protein_shift  = np.array([20,10,0])	# how much you want to shift your input structure
-global protein_rotation;  protein_rotation  = 30		# how much you want to rotate the shifted structure (degrees)
+global pdbname;           pdbname = "structures/merged8.pdb"
+global protein_shift;     protein_shift  = np.array([60,0,0])	# how much you want to shift your input structure
+global protein_rotation;  protein_rotation  = 0 		# how much you want to rotate the shifted structure (degrees)
 global loop_length;       loop_length = 14
 global clash_cutoff;	  clash_cutoff = 0.8
 
